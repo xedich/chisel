@@ -1,14 +1,17 @@
 package chserver
 
 import (
+	"crypto/tls"
 	"errors"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 
 	socks5 "github.com/armon/go-socks5"
 	"github.com/gorilla/websocket"
@@ -96,11 +99,31 @@ func NewServer(config *Config) (*Server, error) {
 			return nil, s.Errorf("Missing protocol (%s)", u)
 		}
 		s.reverseProxy = httputil.NewSingleHostReverseProxy(u)
-		//always use proxy host
+		s.reverseProxy.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+		oldDirector := s.reverseProxy.Director
+
+		// revere secure host has a port = normal host port + 1
+		reverseSecureHost := func() string {
+			host, port, err := net.SplitHostPort(u.Host)
+			if err != nil {
+				return net.JoinHostPort(u.Host, "81")
+			} else {
+				port, _ := strconv.Atoi(port)
+				return net.JoinHostPort(host, strconv.Itoa(port+1))
+			}
+		}()
 		s.reverseProxy.Director = func(r *http.Request) {
-			r.URL.Scheme = u.Scheme
-			r.URL.Host = u.Host
-			r.Host = u.Host
+			oldDirector(r)
+
+			// if this is a request through CloudFlare (with flexible ssl), then we create a secure request
+			// to the local endpoint
+			// [browser] <==flexible ssl==> [cloudflare] <==plain==> [chisel server] <==self-signed ssl==> [local lan]
+			if r.URL.Scheme == "http" && r.Header.Get("Cf-Visitor") == `{"scheme":"https"}` {
+				r.URL.Host = reverseSecureHost
+				r.URL.Scheme = "https"
+			}
 		}
 	}
 	//setup socks server (not listening on any port!)
