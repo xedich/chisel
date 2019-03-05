@@ -2,13 +2,16 @@ package chserver
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"regexp"
 	"time"
+	"strconv"
 
 	"github.com/gorilla/websocket"
 	chshare "github.com/jpillora/chisel/share"
@@ -101,12 +104,31 @@ func NewServer(c *Config) (*Server, error) {
 			return nil, server.Errorf("Missing protocol (%s)", u)
 		}
 		server.reverseProxy = httputil.NewSingleHostReverseProxy(u)
-		//always use proxy host
+		server.reverseProxy.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+		oldDirector := server.reverseProxy.Director
+
+		// revere secure host has a port = normal host port + 1
+		reverseSecureHost := func() string {
+			host, port, err := net.SplitHostPort(u.Host)
+			if err != nil {
+				return net.JoinHostPort(u.Host, "81")
+			} else {
+				port, _ := strconv.Atoi(port)
+				return net.JoinHostPort(host, strconv.Itoa(port+1))
+			}
+		}()
 		server.reverseProxy.Director = func(r *http.Request) {
-			//enforce origin, keep path
-			r.URL.Scheme = u.Scheme
-			r.URL.Host = u.Host
-			r.Host = u.Host
+			oldDirector(r)
+
+			// if this is a request through CloudFlare (with flexible ssl), then we create a secure request
+			// to the local endpoint
+			// [browser] <==flexible ssl==> [cloudflare] <==plain==> [chisel server] <==self-signed ssl==> [local lan]
+			if r.URL.Scheme == "http" && r.Header.Get("Cf-Visitor") == `{"scheme":"https"}` {
+				r.URL.Host = reverseSecureHost
+				r.URL.Scheme = "https"
+			}
 		}
 	}
 	//print when reverse tunnelling is enabled
