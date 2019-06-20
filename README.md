@@ -43,6 +43,45 @@ docker run --rm -it jpillora/chisel --help
 $ go get -v github.com/jpillora/chisel
 ```
 
+### Making DLL on Windows:
+
+**Required toolset**
+TDM-GCC: https://netix.dl.sourceforge.net/project/tdm-gcc/TDM-GCC%20Installer/tdm64-gcc-5.1.0-2.exe
+CFF Explorer: to check compiled binary files
+
+** Code changes **
+
+Add following code to `main.go`
+```
+//export PrintHello
+func PrintHello() {
+        fmt.Println("From DLL: Hello!")
+}
+```
+
+**Compile to static library**
+
+```
+CGO_ENABLED=1 GOARCH=386 go build -ldflags="-s -w" -buildmode=c-archive .
+```
+
+note that using `-ldflags="-s -w"` is for strip off debug symbol and make the size of the library smaller.
+
+**Create dynamic library**
+
+Create `.def` file for exporting function:
+
+```
+LIBRARY   chisel
+EXPORTS
+   PrintHello
+```
+
+```
+gcc -m32 -shared -o chisel.dll chisel.def chisel.a -Wl,--allow-multiple-definition -static -lstdc++ -lwinmm -lntdll -lws2_32
+```
+
+
 ### Demo
 
 A [demo app](https://chisel-demo.herokuapp.com) on Heroku is running this `chisel server`:
