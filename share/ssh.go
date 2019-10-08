@@ -44,7 +44,15 @@ func FingerprintKey(k ssh.PublicKey) string {
 }
 
 func HandleTCPStream(l *Logger, connStats *ConnStats, src io.ReadWriteCloser, remote string) {
-	dst, err := net.Dial("tcp", remote)
+	HandleDuplexStream(l, connStats, src, "tcp", remote)
+}
+
+func HandleUnixDomainSocketStream(l *Logger, connStats *ConnStats, src io.ReadWriteCloser, remote string) {
+	HandleDuplexStream(l, connStats, src, "unix", remote)
+}
+
+func HandleDuplexStream(l *Logger, connStats *ConnStats, src io.ReadWriteCloser, protocol string, remote string) {
+	dst, err := net.Dial(protocol, remote)
 	if err != nil {
 		l.Debugf("Remote failed (%s)", err)
 		src.Close()

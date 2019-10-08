@@ -1,1 +1,1 @@
-web: chisel server --reverse --port $PORT --proxy "http://localhost:${FORWARD_PORT:-8091}/" 
+web: chisel server --reverse --uds --port $PORT --proxy "http://localhost:${FORWARD_PORT:-8091}/" 
