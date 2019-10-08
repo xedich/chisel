@@ -3,7 +3,9 @@ package chshare
 import (
 	"errors"
 	"net/url"
+	"os"
 	"regexp"
+	"runtime"
 	"strings"
 )
 
@@ -17,16 +19,24 @@ import (
 //   3000:google.com:80 ->
 //     local  127.0.0.1:3000
 //     remote google.com:80
+//   3000:unix:///tmp/mysql.sock ->
+//     local  127.0.0.1:3000
+//     remote (local sock) /tmp/mysql.sock
+//   R:unix:///tmp/mysql.sock:3000 ->
+//     local  (local sock) /tmp/mysql.sock
+//     remote 127.0.0.1:3000
 //   192.168.0.1:3000:google.com:80 ->
 //     local  192.168.0.1:3000
 //     remote google.com:80
 
 type Remote struct {
 	LocalHost, LocalPort, RemoteHost, RemotePort string
-	Socks, Reverse                               bool
+	Socks, Uds, Reverse                          bool
 }
 
 const revPrefix = "R:"
+const udsScheme = "unix"
+const udsPrefix = udsScheme + "://"
 
 func DecodeRemote(s string) (*Remote, error) {
 	reverse := false
@@ -60,6 +70,21 @@ func DecodeRemote(s string) (*Remote, error) {
 			}
 			continue
 		}
+		//last part unix://path/to/unix/domain/socket
+		if i == len(parts)-1 && isUds(udsScheme+":"+p) {
+			udsPath := strings.TrimPrefix(p, "//")
+			if reverse {
+				if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+					return nil, errors.New("Unix domain socket is only supported on *nix system")
+				}
+				if _, err := os.Stat(udsPath); os.IsNotExist(err) {
+					return nil, errors.New("Unix domain socket " + udsPath + " does not exist!")
+				}
+			}
+			r.RemotePort = udsPath
+			r.Uds = true
+			continue
+		}
 		if !r.Socks && (r.RemotePort == "" && r.LocalPort == "") {
 			return nil, errors.New("Missing ports")
 		}
@@ -90,6 +115,17 @@ func DecodeRemote(s string) (*Remote, error) {
 
 var isPortRegExp = regexp.MustCompile(`^\d+$`)
 
+func isUds(s string) bool {
+	if !strings.HasPrefix(s, udsPrefix) {
+		return false
+	}
+	url, err := url.Parse(s)
+	if err != nil || s != udsPrefix+url.Hostname()+url.Path {
+		return false
+	}
+	return true
+}
+
 func isPort(s string) bool {
 	if !isPortRegExp.MatchString(s) {
 		return false
@@ -118,5 +154,9 @@ func (r *Remote) Remote() string {
 	if r.Socks {
 		return "socks"
 	}
-	return r.RemoteHost + ":" + r.RemotePort
+	joiner := ":"
+	if r.Uds {
+		joiner += "//"
+	}
+	return r.RemoteHost + joiner + r.RemotePort
 }

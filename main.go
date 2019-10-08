@@ -129,6 +129,10 @@ var serverHelp = `
 
     --reverse, Allow clients to specify reverse port forwarding remotes
     in addition to normal remotes.
+
+    --uds, Allow clients to connect to unix domain sockets on remote targets.
+    This mode is only supported by *nix family (linux, osx)
+
 ` + commonHelp
 
 func server(args []string) {
@@ -146,6 +150,7 @@ func server(args []string) {
 	reverse := flags.Bool("reverse", false, "")
 	pid := flags.Bool("pid", false, "")
 	verbose := flags.Bool("v", false, "")
+	uds := flags.Bool("uds", false, "")
 
 	flags.Usage = func() {
 		fmt.Print(serverHelp)
@@ -178,6 +183,7 @@ func server(args []string) {
 		Proxy:    *proxy,
 		Socks5:   *socks5,
 		Reverse:  *reverse,
+		UdsOk:    *uds,
 	})
 	if err != nil {
 		log.Fatal(err)

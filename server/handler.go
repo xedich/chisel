@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -108,6 +109,11 @@ func (s *Server) handleWebsocket(w http.ResponseWriter, req *http.Request) {
 			failed(s.Errorf("Reverse port forwaring not enabled on server"))
 			return
 		}
+		if r.Uds && !s.udsOk {
+			clog.Debugf("Denied unix domain socket forwarding request, please enable --uds")
+			failed(s.Errorf("Unix domain socket not enabled on server"))
+			return
+		}
 	}
 	//if user is provided, ensure they have
 	//access to the desired remotes
@@ -159,6 +165,7 @@ func (s *Server) handleSSHRequests(clientLog *chshare.Logger, reqs <-chan *ssh.R
 }
 
 func (s *Server) handleSSHChannels(clientLog *chshare.Logger, chans <-chan ssh.NewChannel) {
+	socketPrefix := "unix://"
 	for ch := range chans {
 		remote := string(ch.ExtraData())
 		socks := remote == "socks"
@@ -176,10 +183,22 @@ func (s *Server) handleSSHChannels(clientLog *chshare.Logger, chans <-chan ssh.N
 		}
 		go ssh.DiscardRequests(reqs)
 		//handle stream type
-		connID := s.connStats.New()
 		if socks {
+			connID := s.connStats.New()
 			go s.handleSocksStream(clientLog.Fork("socksconn#%d", connID), stream)
+		} else if strings.HasPrefix(remote, socketPrefix) {
+			if !s.udsOk {
+				clientLog.Debugf("Unix domain socket is not allowed by the server")
+			}
+			if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+				clientLog.Debugf("Unix domain socket is only supported on *nix system")
+				continue
+			}
+			remote := strings.TrimPrefix(remote, socketPrefix)
+			connID := s.connStats.New()
+			go chshare.HandleUnixDomainSocketStream(clientLog.Fork("unixconn#%d", connID), &s.connStats, stream, remote)
 		} else {
+			connID := s.connStats.New()
 			go chshare.HandleTCPStream(clientLog.Fork("conn#%d", connID), &s.connStats, stream, remote)
 		}
 	}

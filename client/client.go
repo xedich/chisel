@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
@@ -270,6 +271,7 @@ func (c *Client) Close() error {
 }
 
 func (c *Client) connectStreams(chans <-chan ssh.NewChannel) {
+	socketPrefix := "unix://"
 	for ch := range chans {
 		remote := string(ch.ExtraData())
 		stream, reqs, err := ch.Accept()
@@ -279,6 +281,15 @@ func (c *Client) connectStreams(chans <-chan ssh.NewChannel) {
 		}
 		go ssh.DiscardRequests(reqs)
 		l := c.Logger.Fork("conn#%d", c.connStats.New())
-		go chshare.HandleTCPStream(l, &c.connStats, stream, remote)
+		if strings.HasPrefix(remote, socketPrefix) {
+			if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+				c.Debugf("Unix domain socket is only supported on *nix system")
+				continue
+			}
+			remote := strings.TrimPrefix(remote, socketPrefix)
+			go chshare.HandleUnixDomainSocketStream(l, &c.connStats, stream, remote)
+		} else {
+			go chshare.HandleTCPStream(l, &c.connStats, stream, remote)
+		}
 	}
 }
