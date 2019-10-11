@@ -110,7 +110,7 @@ func (s *Server) handleWebsocket(w http.ResponseWriter, req *http.Request) {
 			failed(s.Errorf("Reverse port forwaring not enabled on server"))
 			return
 		}
-		if r.Uds && !s.udsOk {
+		if (r.Reverse && r.LocalHost == "unix" || !r.Reverse && r.RemoteHost == "unix") && !s.udsOk {
 			clog.Debugf("Denied unix domain socket forwarding request, please enable --uds")
 			failed(s.Errorf("Unix domain socket not enabled on server"))
 			return

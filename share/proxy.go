@@ -31,7 +31,13 @@ func NewTCPProxy(logger *Logger, ssh GetSSHConn, index int, remote *Remote) *TCP
 }
 
 func (p *TCPProxy) Start(ctx context.Context) error {
-	l, err := net.Listen("tcp4", p.remote.LocalHost+":"+p.remote.LocalPort)
+	protocol := "tcp4"
+	remote := p.remote.Remote()
+	if p.remote.LocalHost == "unix" {
+		protocol = "unix"
+		remote = p.remote.LocalPort
+	}
+	l, err := net.Listen(protocol, remote)
 	if err != nil {
 		return fmt.Errorf("%s: %s", p.Logger.Prefix(), err)
 	}

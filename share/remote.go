@@ -31,7 +31,7 @@ import (
 
 type Remote struct {
 	LocalHost, LocalPort, RemoteHost, RemotePort string
-	Socks, Uds, Reverse                          bool
+	Socks, Reverse                               bool
 }
 
 const revPrefix = "R:"
@@ -71,18 +71,23 @@ func DecodeRemote(s string) (*Remote, error) {
 			continue
 		}
 		//last part unix://path/to/unix/domain/socket
-		if i == len(parts)-1 && isUds(udsScheme+":"+p) {
+		if isUds(udsScheme + ":" + p) {
+			if r.Socks {
+				return nil, errors.New("Unix domain socket cannot be used with socks5")
+			}
 			udsPath := strings.TrimPrefix(p, "//")
 			if reverse {
 				if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
 					return nil, errors.New("Unix domain socket is only supported on *nix system")
 				}
-				if _, err := os.Stat(udsPath); os.IsNotExist(err) {
+				if _, err := os.Stat(udsPath); r.RemotePort == "" && os.IsNotExist(err) {
 					return nil, errors.New("Unix domain socket " + udsPath + " does not exist!")
 				}
 			}
-			r.RemotePort = udsPath
-			r.Uds = true
+			r.LocalPort = udsPath
+			if r.RemotePort == "" {
+				r.RemotePort = udsPath
+			}
 			continue
 		}
 		if !r.Socks && (r.RemotePort == "" && r.LocalPort == "") {
@@ -91,7 +96,7 @@ func DecodeRemote(s string) (*Remote, error) {
 		if !isHost(p) {
 			return nil, errors.New("Invalid host")
 		}
-		if !r.Socks && r.RemoteHost == "" {
+		if !r.Socks && p != "unix" && r.RemoteHost == "" {
 			r.RemoteHost = p
 		} else {
 			r.LocalHost = p
@@ -147,7 +152,11 @@ func (r *Remote) String() string {
 	if r.Reverse {
 		tag = revPrefix
 	}
-	return tag + r.LocalHost + ":" + r.LocalPort + "=>" + r.Remote()
+	joiner := ":"
+	if r.LocalHost == "unix" {
+		joiner += "//"
+	}
+	return tag + r.LocalHost + joiner + r.LocalPort + "=>" + r.Remote()
 }
 
 func (r *Remote) Remote() string {
@@ -155,7 +164,7 @@ func (r *Remote) Remote() string {
 		return "socks"
 	}
 	joiner := ":"
-	if r.Uds {
+	if r.RemoteHost == "unix" {
 		joiner += "//"
 	}
 	return r.RemoteHost + joiner + r.RemotePort
