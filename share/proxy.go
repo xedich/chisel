@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"runtime"
+	"syscall"
 
 	"github.com/jpillora/sizestr"
 	"golang.org/x/crypto/ssh"
@@ -37,12 +39,27 @@ func (p *TCPProxy) Start(ctx context.Context) error {
 		protocol = "unix"
 		remote = p.remote.LocalPort
 	}
-	l, err := net.Listen(protocol, remote)
+	netConfig := &net.ListenConfig{Control: p.reusePort}
+	l, err := netConfig.Listen(ctx, protocol, remote)
 	if err != nil {
 		return fmt.Errorf("%s: %s", p.Logger.Prefix(), err)
 	}
 	go p.listen(ctx, l)
 	return nil
+}
+
+func (p *TCPProxy) reusePort(network, address string, conn syscall.RawConn) error {
+	return conn.Control(func(descriptor uintptr) {
+		if !p.remote.Reverse {
+			return
+		}
+		switch runtime.GOOS {
+		case "darwin":
+			syscall.SetsockoptInt(int(descriptor), syscall.SOL_SOCKET, 0x200 /* syscall.SO_REUSEPORT */, 1)
+		case "linux":
+			syscall.SetsockoptInt(int(descriptor), syscall.SOL_SOCKET, 0x0F, 1)
+		}
+	})
 }
 
 func (p *TCPProxy) listen(ctx context.Context, l net.Listener) {
