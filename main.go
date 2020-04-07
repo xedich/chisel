@@ -8,8 +8,8 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/jpillora/chisel/client"
-	"github.com/jpillora/chisel/server"
+	chclient "github.com/jpillora/chisel/client"
+	chserver "github.com/jpillora/chisel/server"
 	chshare "github.com/jpillora/chisel/share"
 )
 
@@ -294,9 +294,6 @@ func client(args []string) {
 	flags.Parse(args)
 	//pull out options, put back remaining args
 	args = flags.Args()
-	if len(args) < 2 {
-		log.Fatalf("A server and least one remote is required")
-	}
 	if *auth == "" {
 		*auth = os.Getenv("AUTH")
 	}
