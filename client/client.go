@@ -256,6 +256,13 @@ func (c *Client) Start(ctx context.Context) error {
 	return nil
 }
 
+func (c *Client) BindRemotes(ctx context.Context, remotes []*settings.Remote) error {
+	if len(remotes) == 0 {
+		return nil
+	}
+	return c.tunnel.BindRemotes(ctx, remotes)
+}
+
 func (c *Client) setProxy(u *url.URL, d *websocket.Dialer) error {
 	// CONNECT proxy
 	if !strings.HasPrefix(u.Scheme, "socks") {
